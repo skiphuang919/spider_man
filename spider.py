@@ -1,4 +1,7 @@
+import sys
 import requests
+import re
+import pprint
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
 from datetime import datetime
@@ -7,13 +10,14 @@ from datetime import datetime
 class MovieSpider(object):
     MOVIE_URL = 'https://movie.douban.com/cinema/nowplaying/shanghai/'
     COMMENT_URL = 'https://movie.douban.com/subject/{movie_id}/comments'
-    REFRESH_INTERVAL_SEC = 24 * 60 * 60
-    RATING_LIST = ('很差', '较差', '还行', '推荐', '力荐')
+    REFRESH_INTERVAL_SEC = 6 * 60 * 60
+    RATING_LIST = ('很差', '较差', '还行', '推荐', '力荐', '其他')
 
-    def __init__(self):
+    def __init__(self, move_name_to_analyze):
+        self.move_name_to_analyze = move_name_to_analyze
         self.move_list = []
         client = MongoClient()
-        self.db = client.movie_db
+        self.movie_collection = client.movie_db.movie_collection
 
     @staticmethod
     def get_res(url, params=None):
@@ -47,7 +51,7 @@ class MovieSpider(object):
             self.move_list.append(tmp)
         print('Get {} movies'.format(len(self.move_list)))
         if self.move_list:
-            res = self.db.movie_collection.insert_many(self.move_list)
+            res = self.movie_collection.insert_many(self.move_list)
             print('Insert {} items'.format(len(res.inserted_ids)))
 
     def _get_movie_comments(self, movie_id):
@@ -67,17 +71,42 @@ class MovieSpider(object):
                                           'rating': rating})
         return comment_text_list
 
+    def _analyze_comments(self, comments):
+        rating_info = {item: 0 for item in self.RATING_LIST}
+        for c in comments:
+            level = c['rating'] if c['rating'] in self.RATING_LIST else '其他'
+            rating_info[level] += 1
+        return rating_info
+
+    def pump_key_words(self):
+        pass
+
+    def analyze_movie(self):
+        info_list = []
+        name_regex = re.compile(self.move_name_to_analyze)
+        for item in self.movie_collection.find({'name': name_regex}):
+            tmp = dict()
+            tmp['name'] = item['name']
+            tmp['score'] = item['score']
+            tmp['comment_info'] = self._analyze_comments(item['comment'])
+            info_list.append(tmp)
+        return info_list
+
     def run(self):
-        movie = self.db.movie_collection.find_one()
+        movie = self.movie_collection.find_one()
         if not movie or self.hours_span_from_now(movie['date']) > self.REFRESH_INTERVAL_SEC:
             print('refresh data...')
             self.get_movies()
             print('refresh done...')
-
-    def trim_data(self):
-        pass
-
+        else:
+            print('data refreshed...')
+        res = self.analyze_movie()
+        pprint.pprint(res)
 
 if __name__ == '__main__':
-    s = MovieSpider()
-    s.run()
+    if len(sys.argv) != 2:
+        print('Usage: python spider [movie name]')
+    else:
+        movie_name = sys.argv[-1]
+        s = MovieSpider(movie_name)
+        s.run()
