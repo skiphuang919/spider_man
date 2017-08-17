@@ -1,17 +1,19 @@
 import requests
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
+from datetime import datetime
 
 
 class MovieSpider(object):
     MOVIE_URL = 'https://movie.douban.com/cinema/nowplaying/shanghai/'
     COMMENT_URL = 'https://movie.douban.com/subject/{movie_id}/comments'
+    REFRESH_INTERVAL_SEC = 24 * 60 * 60
+    RATING_LIST = ('很差', '较差', '还行', '推荐', '力荐')
 
     def __init__(self):
         self.move_list = []
         client = MongoClient()
         self.db = client.movie_db
-        self.movie_collection = self.db.movie_collection
 
     @staticmethod
     def get_res(url, params=None):
@@ -19,11 +21,14 @@ class MovieSpider(object):
         soup = BeautifulSoup(res.text, 'html.parser')
         return soup
 
-    def get_moves(self):
+    @staticmethod
+    def hours_span_from_now(start_time):
+        return (datetime.utcnow() - start_time).seconds
+
+    def get_movies(self):
         res = self.get_res(self.MOVIE_URL)
-        print(res)
         now_playing_div = res.find('div', id='nowplaying')
-        now_playing_list = now_playing_div.find_all('li', class_='list-item')
+        now_playing_list = now_playing_div.find_all('li', class_='list-item') if now_playing_div else []
 
         for item in now_playing_list:
             print('------{}------'.format(item['data-title']))
@@ -38,9 +43,12 @@ class MovieSpider(object):
             tmp['actors'] = list(map(lambda x: x.strip(), item['data-actors'].split('/')))
             tmp['score'] = item['data-score']
             tmp['comment'] = self._get_movie_comments(tmp['id'])
+            tmp['date'] = datetime.utcnow()
             self.move_list.append(tmp)
-        res = self.movie_collection.insert_many(self.move_list)
-        print('Insert {} items'.format(len(res)))
+        print('Get {} movies'.format(len(self.move_list)))
+        if self.move_list:
+            res = self.db.movie_collection.insert_many(self.move_list)
+            print('Insert {} items'.format(len(res.inserted_ids)))
 
     def _get_movie_comments(self, movie_id):
         comment_text_list = []
@@ -60,7 +68,14 @@ class MovieSpider(object):
         return comment_text_list
 
     def run(self):
-        self.get_moves()
+        movie = self.db.movie_collection.find_one()
+        if not movie or self.hours_span_from_now(movie['date']) > self.REFRESH_INTERVAL_SEC:
+            print('refresh data...')
+            self.get_movies()
+            print('refresh done...')
+
+    def trim_data(self):
+        pass
 
 
 if __name__ == '__main__':
