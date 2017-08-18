@@ -96,10 +96,13 @@ class MovieSpider(object):
         movie = self.movie_collection.find_one()
         if not movie or self.hours_span_from_now(movie['date']) > self.REFRESH_INTERVAL_SEC:
             print('refresh data...')
+            self.movie_collection.delete_many({})
             self.get_movies()
             print('refresh done...')
         else:
-            print('data refreshed...')
+            print('fresh data ...')
+        print('-'*20)
+        print('Analyze result:')
         res = self.analyze_movie()
         pprint.pprint(res)
 
