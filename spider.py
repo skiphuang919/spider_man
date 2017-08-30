@@ -2,9 +2,14 @@ import sys
 import requests
 import re
 import pprint
+import jieba
+import os
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
 from datetime import datetime
+from wordcloud import WordCloud
+
+d = os.path.dirname(__file__)
 
 
 class MovieSpider(object):
@@ -12,6 +17,10 @@ class MovieSpider(object):
     COMMENT_URL = 'https://movie.douban.com/subject/{movie_id}/comments'
     REFRESH_INTERVAL_SEC = 6 * 60 * 60
     RATING_LIST = ('很差', '较差', '还行', '推荐', '力荐', '其他')
+
+    CH_PATTERN = re.compile(r'^[\u4e00-\u9fa5]+$')
+
+    TMP_FILE_PATH = os.path.join(d, 'tmp.txt')
 
     def __init__(self, move_name_to_analyze):
         self.move_name_to_analyze = move_name_to_analyze
@@ -78,19 +87,42 @@ class MovieSpider(object):
             rating_info[level] += 1
         return rating_info
 
-    def pump_key_words(self):
-        pass
+    def extract_words_to_file(self, comments):
+        with open(self.TMP_FILE_PATH, 'a') as f:
+            for comment in comments:
+                comment_content = comment['comment_content']
+                seg_list = filter(lambda x: re.match(self.CH_PATTERN, x) is not None,
+                                  jieba.lcut(comment_content, cut_all=False))
+                f.write(' '.join(seg_list))
+
+    def generate_comment_cloud(self, comments):
+
+        self.extract_words_to_file(comments)
+        word_cloud = WordCloud(font_path='/home/kevin/Downloads/DroidSansFallbackFull.ttf',
+                               width=1200,
+                               height=800)
+
+        with open(self.TMP_FILE_PATH) as f:
+            word_cloud.generate(f.read())
+
+        os.remove(self.TMP_FILE_PATH)
+
+        image = word_cloud.to_image()
+        image.show()
 
     def analyze_movie(self):
-        info_list = []
-        name_regex = re.compile(self.move_name_to_analyze)
-        for item in self.movie_collection.find({'name': name_regex}):
-            tmp = dict()
-            tmp['name'] = item['name']
-            tmp['score'] = item['score']
-            tmp['comment_info'] = self._analyze_comments(item['comment'])
-            info_list.append(tmp)
-        return info_list
+        result = dict()
+        movie_item = self.movie_collection.find_one({'name': self.move_name_to_analyze})
+        if movie_item:
+            self.generate_comment_cloud(movie_item['comment'])
+            result['name'] = movie_item['name']
+            result['score'] = movie_item['score']
+            rating_info = {item: 0 for item in self.RATING_LIST}
+            for c in movie_item['comment']:
+                level = c['rating'] if c['rating'] in self.RATING_LIST else '其他'
+                rating_info[level] += 1
+                result['comment_info'] = rating_info
+        return result
 
     def run(self):
         movie = self.movie_collection.find_one()
