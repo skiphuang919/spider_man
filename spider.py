@@ -80,13 +80,6 @@ class MovieSpider(object):
                                           'rating': rating})
         return comment_text_list
 
-    def _analyze_comments(self, comments):
-        rating_info = {item: 0 for item in self.RATING_LIST}
-        for c in comments:
-            level = c['rating'] if c['rating'] in self.RATING_LIST else '其他'
-            rating_info[level] += 1
-        return rating_info
-
     def extract_words_to_file(self, comments):
         with open(self.TMP_FILE_PATH, 'a') as f:
             for comment in comments:
