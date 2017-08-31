@@ -27,5 +27,4 @@ Prefix dict has been built succesfully.
  'score': '8.9'}
 
 ```
-词云：
-![generated img]https://github.com/skiphuang919/spider_man/blob/master/demo.jpg
+![generated img](https://github.com/skiphuang919/spider_man/blob/master/demo.jpg)
