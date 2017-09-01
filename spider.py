@@ -4,6 +4,7 @@ import re
 import pprint
 import jieba
 import os
+import concurrent.futures
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
 from datetime import datetime
@@ -24,7 +25,6 @@ class MovieSpider(object):
 
     def __init__(self, move_name_to_analyze):
         self.move_name_to_analyze = move_name_to_analyze
-        self.move_list = []
         client = MongoClient()
         self.movie_collection = client.movie_db.movie_collection
 
@@ -38,30 +38,30 @@ class MovieSpider(object):
     def hours_span_from_now(start_time):
         return (datetime.utcnow() - start_time).seconds
 
-    def get_movies(self):
+    def get_movie_list(self):
         res = self.get_res(self.MOVIE_URL)
         now_playing_div = res.find('div', id='nowplaying')
         now_playing_list = now_playing_div.find_all('li', class_='list-item') if now_playing_div else []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = (executor.submit(self.get_movie_info, movie_item) for movie_item in now_playing_list)
+            for future in concurrent.futures.as_completed(futures):
+                pass
 
-        for item in now_playing_list:
-            print('------{}------'.format(item['data-title']))
-            tmp = dict()
-            tmp['id'] = item['data-subject']
-            tmp['name'] = item['data-title']
-            tmp['score'] = item['data-score']
-            tmp['release'] = item['data-release']
-            tmp['duration'] = item['data-duration']
-            tmp['region'] = item['data-region']
-            tmp['director'] = item['data-director']
-            tmp['actors'] = list(map(lambda x: x.strip(), item['data-actors'].split('/')))
-            tmp['score'] = item['data-score']
-            tmp['comment'] = self._get_movie_comments(tmp['id'])
-            tmp['date'] = datetime.utcnow()
-            self.move_list.append(tmp)
-        print('Get {} movies'.format(len(self.move_list)))
-        if self.move_list:
-            res = self.movie_collection.insert_many(self.move_list)
-            print('Insert {} items'.format(len(res.inserted_ids)))
+    def get_movie_info(self, item):
+        tmp = dict()
+        tmp['id'] = item['data-subject']
+        tmp['name'] = item['data-title']
+        tmp['score'] = item['data-score']
+        tmp['release'] = item['data-release']
+        tmp['duration'] = item['data-duration']
+        tmp['region'] = item['data-region']
+        tmp['director'] = item['data-director']
+        tmp['actors'] = list(map(lambda x: x.strip(), item['data-actors'].split('/')))
+        tmp['score'] = item['data-score']
+        tmp['comment'] = self._get_movie_comments(tmp['id'])
+        tmp['date'] = datetime.utcnow()
+        self.movie_collection.insert_one(tmp)
+        print('Insert {}'.format(item['data-title']))
 
     def _get_movie_comments(self, movie_id):
         comment_text_list = []
@@ -122,7 +122,7 @@ class MovieSpider(object):
         if not movie or self.hours_span_from_now(movie['date']) > self.REFRESH_INTERVAL_SEC:
             print('refresh data...')
             self.movie_collection.delete_many({})
-            self.get_movies()
+            self.get_movie_list()
             print('refresh done...')
         else:
             print('fresh data ...')
