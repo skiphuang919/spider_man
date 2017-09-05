@@ -43,9 +43,7 @@ class MovieSpider(object):
         now_playing_div = res.find('div', id='nowplaying')
         now_playing_list = now_playing_div.find_all('li', class_='list-item') if now_playing_div else []
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = (executor.submit(self.get_movie_info, movie_item) for movie_item in now_playing_list)
-            for future in concurrent.futures.as_completed(futures):
-                pass
+            executor.map(self.get_movie_info, now_playing_list)
 
     def get_movie_info(self, item):
         tmp = dict()
