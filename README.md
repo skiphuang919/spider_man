@@ -7,6 +7,7 @@
 
 ## require
 * requests
+* ThreadPool
 * bs4
 * mongoDB
 * jieba
